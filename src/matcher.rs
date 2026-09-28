@@ -47,15 +47,20 @@ fn extension_allowed(path: &Path, extensions: &[String]) -> bool {
 /// Inspects a single file and, if a pattern matches, writes/updates its Finder comment.
 /// Returns Some(comment written) on success, None if nothing was done.
 pub fn process_file(path: &Path, config: &Config, patterns: &CompiledPatterns) -> Option<String> {
-    if !path.is_file() {
-        return None;
-    }
+    // Order matters here: extension/regex checks are pure string work with no
+    // syscall, while is_file() stats the path. Rejecting on the cheap checks
+    // first avoids a stat() for every directory and every irrelevant file
+    // when walking a large tree (most entries in a typical library are
+    // directories or non-media files like .nfo/.srt).
+    let filename = path.file_name()?.to_str()?;
     if !extension_allowed(path, &config.extensions) {
         return None;
     }
-    let filename = path.file_name()?.to_str()?;
     let tags = patterns.detect_tags(filename);
     if tags.is_empty() {
+        return None;
+    }
+    if !path.is_file() {
         return None;
     }
     let new_tag = tags.join(" ");

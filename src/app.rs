@@ -2,6 +2,7 @@ use crate::config::{Config, PatternEntry};
 use crate::watcher::{self, LogMsg, Waker, WatcherHandle};
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+use std::collections::VecDeque;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -57,7 +58,7 @@ pub struct SpineApp {
     watcher_handle: Option<WatcherHandle>,
     log_tx: Sender<LogMsg>,
     log_rx: Receiver<LogMsg>,
-    log_lines: Vec<String>,
+    log_lines: VecDeque<String>,
     window_visible: bool,
     waker: Waker,
     _tray_icon: Option<TrayIcon>,
@@ -101,7 +102,7 @@ impl SpineApp {
             watcher_handle: None,
             log_tx,
             log_rx,
-            log_lines: Vec::new(),
+            log_lines: VecDeque::new(),
             window_visible: true,
             waker,
             _tray_icon: build_tray_icon(),
@@ -154,14 +155,16 @@ impl SpineApp {
         match watcher::start(self.config.clone(), self.log_tx.clone(), self.waker.clone()) {
             Ok(handle) => self.watcher_handle = Some(handle),
             Err(e) => {
-                self.log_lines.push(format!("Erreur au demarrage: {}", e));
+                self.log_lines
+                    .push_back(format!("Erreur au demarrage: {}", e));
             }
         }
     }
 
     fn stop_watching(&mut self) {
         self.watcher_handle = None;
-        self.log_lines.push("Surveillance arretee.".to_string());
+        self.log_lines
+            .push_back("Surveillance arretee.".to_string());
     }
 
     /// Runs the folder scan on a background thread so the UI never freezes,
@@ -185,9 +188,9 @@ impl SpineApp {
                 LogMsg::Info(s) => format!("[INFO] {}", s),
                 LogMsg::Error(s) => format!("[ERREUR] {}", s),
             };
-            self.log_lines.push(line);
+            self.log_lines.push_back(line);
             if self.log_lines.len() > 500 {
-                self.log_lines.remove(0);
+                self.log_lines.pop_front();
             }
         }
     }
