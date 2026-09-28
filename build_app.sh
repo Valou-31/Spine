@@ -7,12 +7,37 @@ cargo build --release
 APP_NAME="Spine"
 APP_DIR="dist/${APP_NAME}.app"
 BIN_NAME="spine"
+LOGO="assets/logo.png"
 
 rm -rf "$APP_DIR"
-mkdir -p "$APP_DIR/Contents/MacOS"
+mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 
 cp "target/release/${BIN_NAME}" "$APP_DIR/Contents/MacOS/${APP_NAME}"
 chmod +x "$APP_DIR/Contents/MacOS/${APP_NAME}"
+
+# --- App icon: crop the character/wolf square out of the wide source logo, then
+# build a standard .iconset and compile it to .icns with the built-in iconutil. ---
+if [ -f "$LOGO" ] && command -v ffmpeg >/dev/null && command -v iconutil >/dev/null; then
+    ICON_TMP="$(mktemp -d)"
+    trap 'rm -rf "$ICON_TMP"' EXIT
+
+    ffmpeg -y -loglevel error -i "$LOGO" -vf "crop=2160:2160:650:0" -update 1 "$ICON_TMP/icon-square.png"
+
+    ICONSET="$ICON_TMP/AppIcon.iconset"
+    mkdir -p "$ICONSET"
+    for size in 16 32 128 256 512; do
+        sips -z "$size" "$size" "$ICON_TMP/icon-square.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+        double=$((size * 2))
+        sips -z "$double" "$double" "$ICON_TMP/icon-square.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+    done
+
+    iconutil -c icns "$ICONSET" -o "$APP_DIR/Contents/Resources/AppIcon.icns"
+    ICON_PLIST_ENTRY="    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>"
+else
+    echo "Warning: skipping app icon (missing $LOGO, ffmpeg, or iconutil)."
+    ICON_PLIST_ENTRY=""
+fi
 
 cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -39,6 +64,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <true/>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.utilities</string>
+${ICON_PLIST_ENTRY}
 </dict>
 </plist>
 PLIST
