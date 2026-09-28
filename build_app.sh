@@ -8,6 +8,8 @@ APP_NAME="Spine"
 APP_DIR="dist/${APP_NAME}.app"
 BIN_NAME="spine"
 LOGO="assets/logo.png"
+BACKGROUND_SVG="assets/dmg-background.svg"
+VERSION="$(grep '^version' Cargo.toml | head -1 | sed -E 's/version = "(.*)"/\1/')"
 
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
@@ -56,9 +58,9 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <key>CFBundleIdentifier</key>
     <string>com.valentin.spine</string>
     <key>CFBundleVersion</key>
-    <string>1.0</string>
+    <string>${VERSION}</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>${VERSION}</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
@@ -78,8 +80,42 @@ codesign --force --deep --sign - "$APP_DIR"
 
 echo "App bundle created at: $APP_DIR"
 
-# --- Distributable .dmg ---
-DMG_PATH="dist/${APP_NAME}.dmg"
+# --- Distributable .dmg: Spine.app + an Applications drop link, a background
+# image with an arrow explaining the drag-and-drop, laid out via create-dmg. ---
+DMG_NAME="${APP_NAME}-v${VERSION}"
+DMG_PATH="dist/${DMG_NAME}.dmg"
 rm -f "$DMG_PATH"
-hdiutil create -volname "$APP_NAME" -srcfolder "$APP_DIR" -ov -format UDZO "$DMG_PATH" >/dev/null
+
+STAGING="dist/dmg-staging"
+rm -rf "$STAGING"
+mkdir -p "$STAGING"
+cp -R "$APP_DIR" "$STAGING/"
+
+if [ -f "$BACKGROUND_SVG" ] && command -v qlmanage >/dev/null; then
+    BG_TMP="$(mktemp -d)"
+    qlmanage -t -s 660 -o "$BG_TMP" "$BACKGROUND_SVG" >/dev/null 2>&1
+    ffmpeg -y -loglevel error -i "$BG_TMP/$(basename "$BACKGROUND_SVG").png" \
+        -vf "crop=660:400:0:0" -update 1 "$BG_TMP/background.png"
+    BACKGROUND_PNG="$BG_TMP/background.png"
+else
+    BACKGROUND_PNG=""
+fi
+
+create-dmg \
+    --volname "$APP_NAME" \
+    --volicon "$APP_DIR/Contents/Resources/AppIcon.icns" \
+    ${BACKGROUND_PNG:+--background "$BACKGROUND_PNG"} \
+    --window-pos 200 120 \
+    --window-size 660 400 \
+    --icon-size 128 \
+    --icon "${APP_NAME}.app" 180 170 \
+    --hide-extension "${APP_NAME}.app" \
+    --app-drop-link 480 170 \
+    --no-internet-enable \
+    "$DMG_PATH" \
+    "$STAGING"
+
+[ -f "$BACKGROUND_PNG" ] && rm -rf "$(dirname "$BACKGROUND_PNG")"
+rm -rf "$STAGING"
+
 echo "Disk image created at: $DMG_PATH"
