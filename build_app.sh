@@ -17,35 +17,35 @@ mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "target/release/${BIN_NAME}" "$APP_DIR/Contents/MacOS/${APP_NAME}"
 chmod +x "$APP_DIR/Contents/MacOS/${APP_NAME}"
 
-# --- App icon: pad the source logo to a square canvas, then build a standard
-# .iconset and compile it to .icns with the built-in iconutil. ---
-if [ -f "$LOGO" ] && command -v ffmpeg >/dev/null && command -v iconutil >/dev/null; then
+# --- App icon: rasterize the SVG logo via the built-in QuickLook thumbnailer
+# (ffmpeg on this platform has no SVG decoder), then build a standard .iconset
+# and compile it to .icns with the built-in iconutil. qlmanage -t always
+# produces a square thumbnail, which is exactly the shape an icon needs - but
+# it also always flattens transparency onto opaque white, so we chroma-key
+# that white back out to alpha with ffmpeg before using it as the icon.
+if [ -f "$LOGO" ] && command -v qlmanage >/dev/null && command -v ffmpeg >/dev/null && command -v iconutil >/dev/null; then
     ICON_TMP="$(mktemp -d)"
     trap 'rm -rf "$ICON_TMP"' EXIT
 
-    LOGO_PNG="$ICON_TMP/logo.png"
-    ffmpeg -y -loglevel error -i "$LOGO" -vf "scale=1024:1024" "$LOGO_PNG"
-
-    LOGO_W=$(sips -g pixelWidth "$LOGO_PNG" | awk '/pixelWidth/{print $2}')
-    LOGO_H=$(sips -g pixelHeight "$LOGO_PNG" | awk '/pixelHeight/{print $2}')
-    SIDE=$((LOGO_W > LOGO_H ? LOGO_W : LOGO_H))
-    ffmpeg -y -loglevel error -i "$LOGO_PNG" \
-        -vf "format=rgba,pad=${SIDE}:${SIDE}:(${SIDE}-${LOGO_W})/2:(${SIDE}-${LOGO_H})/2:color=0x00000000" \
-        "$ICON_TMP/icon-square.png"
+    qlmanage -t -s 1024 -o "$ICON_TMP" "$LOGO" >/dev/null 2>&1
+    ffmpeg -y -loglevel error -i "$ICON_TMP/$(basename "$LOGO").png" \
+        -vf "format=rgba,colorkey=0xFFFFFF:0.15:0.05" \
+        "$ICON_TMP/icon-transparent.png"
+    ICON_SOURCE="$ICON_TMP/icon-transparent.png"
 
     ICONSET="$ICON_TMP/AppIcon.iconset"
     mkdir -p "$ICONSET"
     for size in 16 32 128 256 512; do
-        sips -z "$size" "$size" "$ICON_TMP/icon-square.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+        sips -z "$size" "$size" "$ICON_SOURCE" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
         double=$((size * 2))
-        sips -z "$double" "$double" "$ICON_TMP/icon-square.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+        sips -z "$double" "$double" "$ICON_SOURCE" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
     done
 
     iconutil -c icns "$ICONSET" -o "$APP_DIR/Contents/Resources/AppIcon.icns"
     ICON_PLIST_ENTRY="    <key>CFBundleIconFile</key>
     <string>AppIcon</string>"
 else
-    echo "Warning: skipping app icon (missing $LOGO, ffmpeg, or iconutil)."
+    echo "Warning: skipping app icon (missing $LOGO, qlmanage, ffmpeg, or iconutil)."
     ICON_PLIST_ENTRY=""
 fi
 

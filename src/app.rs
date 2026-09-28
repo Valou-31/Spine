@@ -6,7 +6,8 @@ use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
 fn load_tray_icon() -> Option<tray_icon::Icon> {
-    let bytes = include_bytes!("../assets/logo.png");
+    // Rasterized from assets/logo.svg at build time by build.rs.
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/tray_icon.png"));
     let img = image::load_from_memory(bytes)
         .ok()?
         .resize(44, 44, image::imageops::FilterType::Lanczos3)

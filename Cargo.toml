@@ -16,5 +16,8 @@ rfd = "0.15"
 tray-icon = "0.25.1"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
 
+[build-dependencies]
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+
 [profile.release]
 opt-level = 2
