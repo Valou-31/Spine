@@ -1,9 +1,27 @@
 use crate::config::{Config, PatternEntry};
 use crate::watcher::{self, LogMsg, WatcherHandle};
+use objc2::MainThreadMarker;
+use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
+
+/// Shows/hides the Dock icon (and Cmd+Tab entry) to match the window's
+/// visibility, so hiding the window to the menu bar really leaves only the
+/// menu bar icon behind instead of a Dock icon with no visible window.
+fn set_dock_visible(visible: bool) {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    let policy = if visible {
+        NSApplicationActivationPolicy::Regular
+    } else {
+        NSApplicationActivationPolicy::Accessory
+    };
+    app.setActivationPolicy(policy);
+}
 
 fn load_tray_icon() -> Option<tray_icon::Icon> {
     // Rasterized from assets/logo.svg at build time by build.rs.
@@ -68,6 +86,7 @@ impl SpineApp {
 
     fn toggle_window(&mut self, ctx: &egui::Context) {
         self.window_visible = !self.window_visible;
+        set_dock_visible(self.window_visible);
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(self.window_visible));
         if self.window_visible {
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
@@ -152,6 +171,7 @@ impl eframe::App for SpineApp {
         if ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            set_dock_visible(false);
             self.window_visible = false;
         }
 
