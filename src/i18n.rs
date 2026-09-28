@@ -8,13 +8,6 @@ pub enum Language {
 }
 
 impl Language {
-    pub fn flag(self) -> &'static str {
-        match self {
-            Language::En => "\u{1F1EC}\u{1F1E7}",
-            Language::Fr => "\u{1F1EB}\u{1F1F7}",
-        }
-    }
-
     pub fn native_name(self) -> &'static str {
         match self {
             Language::En => "English",

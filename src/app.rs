@@ -25,6 +25,14 @@ fn set_dock_visible(visible: bool) {
     app.setActivationPolicy(policy);
 }
 
+fn load_flag_texture(ctx: &egui::Context, name: &str, bytes: &[u8]) -> Option<egui::TextureHandle> {
+    let img = image::load_from_memory(bytes).ok()?.into_rgba8();
+    let (width, height) = img.dimensions();
+    let color_image =
+        egui::ColorImage::from_rgba_unmultiplied([width as usize, height as usize], img.as_raw());
+    Some(ctx.load_texture(name, color_image, egui::TextureOptions::LINEAR))
+}
+
 fn load_tray_icon() -> Option<tray_icon::Icon> {
     // Rasterized from assets/logo.svg at build time by build.rs.
     let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/tray_icon.png"));
@@ -69,6 +77,8 @@ pub struct SpineApp {
     tray_lang: Language,
     tray_event_rx: Receiver<TrayIconEvent>,
     menu_event_rx: Receiver<MenuEvent>,
+    flag_fr: Option<egui::TextureHandle>,
+    flag_gb: Option<egui::TextureHandle>,
 
     new_pattern_name: String,
     new_pattern_regex: String,
@@ -108,6 +118,13 @@ impl SpineApp {
             None => (None, None, None),
         };
 
+        let flag_fr = load_flag_texture(ctx, "flag_fr", include_bytes!("../assets/france.png"));
+        let flag_gb = load_flag_texture(
+            ctx,
+            "flag_gb",
+            include_bytes!(concat!(env!("OUT_DIR"), "/gb_flag.png")),
+        );
+
         SpineApp {
             config,
             watcher_handle: None,
@@ -122,6 +139,8 @@ impl SpineApp {
             tray_lang: lang,
             tray_event_rx,
             menu_event_rx,
+            flag_fr,
+            flag_gb,
             new_pattern_name: String::new(),
             new_pattern_regex: String::new(),
             new_extension: String::new(),
@@ -248,23 +267,38 @@ impl eframe::App for SpineApp {
             ui.horizontal(|ui| {
                 ui.heading("Spine");
                 ui.add_space(8.0);
-                if ui
-                    .selectable_label(lang == Language::Fr, Language::Fr.flag())
-                    .on_hover_text(Language::Fr.native_name())
-                    .clicked()
-                {
-                    let mut cfg = self.config.lock().unwrap();
-                    cfg.language = Language::Fr;
-                    cfg.save();
+                let flag_size = egui::vec2(24.0, 16.0);
+                if let Some(flag) = &self.flag_fr {
+                    if ui
+                        .add(
+                            egui::ImageButton::new(
+                                egui::Image::new(flag).fit_to_exact_size(flag_size),
+                            )
+                            .selected(lang == Language::Fr),
+                        )
+                        .on_hover_text(Language::Fr.native_name())
+                        .clicked()
+                    {
+                        let mut cfg = self.config.lock().unwrap();
+                        cfg.language = Language::Fr;
+                        cfg.save();
+                    }
                 }
-                if ui
-                    .selectable_label(lang == Language::En, Language::En.flag())
-                    .on_hover_text(Language::En.native_name())
-                    .clicked()
-                {
-                    let mut cfg = self.config.lock().unwrap();
-                    cfg.language = Language::En;
-                    cfg.save();
+                if let Some(flag) = &self.flag_gb {
+                    if ui
+                        .add(
+                            egui::ImageButton::new(
+                                egui::Image::new(flag).fit_to_exact_size(flag_size),
+                            )
+                            .selected(lang == Language::En),
+                        )
+                        .on_hover_text(Language::En.native_name())
+                        .clicked()
+                    {
+                        let mut cfg = self.config.lock().unwrap();
+                        cfg.language = Language::En;
+                        cfg.save();
+                    }
                 }
             });
             ui.label(lang.description());
