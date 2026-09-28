@@ -268,22 +268,6 @@ impl eframe::App for SpineApp {
                 ui.heading("Spine");
                 ui.add_space(8.0);
                 let flag_size = egui::vec2(24.0, 16.0);
-                if let Some(flag) = &self.flag_fr {
-                    if ui
-                        .add(
-                            egui::ImageButton::new(
-                                egui::Image::new(flag).fit_to_exact_size(flag_size),
-                            )
-                            .selected(lang == Language::Fr),
-                        )
-                        .on_hover_text(Language::Fr.native_name())
-                        .clicked()
-                    {
-                        let mut cfg = self.config.lock().unwrap();
-                        cfg.language = Language::Fr;
-                        cfg.save();
-                    }
-                }
                 if let Some(flag) = &self.flag_gb {
                     if ui
                         .add(
@@ -297,6 +281,22 @@ impl eframe::App for SpineApp {
                     {
                         let mut cfg = self.config.lock().unwrap();
                         cfg.language = Language::En;
+                        cfg.save();
+                    }
+                }
+                if let Some(flag) = &self.flag_fr {
+                    if ui
+                        .add(
+                            egui::ImageButton::new(
+                                egui::Image::new(flag).fit_to_exact_size(flag_size),
+                            )
+                            .selected(lang == Language::Fr),
+                        )
+                        .on_hover_text(Language::Fr.native_name())
+                        .clicked()
+                    {
+                        let mut cfg = self.config.lock().unwrap();
+                        cfg.language = Language::Fr;
                         cfg.save();
                     }
                 }
