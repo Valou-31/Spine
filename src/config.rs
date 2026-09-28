@@ -20,7 +20,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            watched_folder: PathBuf::from("/Users/Valentin/Documents/Torrents"),
+            watched_folder: dirs::download_dir().unwrap_or_else(|| PathBuf::from(".")),
             patterns: vec![
                 PatternEntry {
                     name: "Episode (SxxExx)".to_string(),

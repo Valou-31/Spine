@@ -41,20 +41,27 @@ pub fn process_file(path: &Path, config: &Config) -> Option<String> {
         return None;
     }
     let new_tag = tags.join(" ");
+    let existing = finder_comment::get_comment(path);
 
     let final_comment = if config.overwrite {
         new_tag
     } else {
-        match finder_comment::get_comment(path) {
-            Some(existing) if !existing.trim().is_empty() => {
-                if existing.contains(&new_tag) {
+        match &existing {
+            Some(e) if !e.trim().is_empty() => {
+                if e.contains(&new_tag) {
                     return None;
                 }
-                format!("{} | {}", new_tag, existing)
+                format!("{} | {}", new_tag, e)
             }
             _ => new_tag,
         }
     };
+
+    // Writing an unchanged comment would still emit a filesystem metadata-change
+    // event, which the watcher would pick back up and reprocess forever.
+    if existing.as_deref() == Some(final_comment.as_str()) {
+        return None;
+    }
 
     finder_comment::set_comment(path, &final_comment).ok()?;
     Some(final_comment)
@@ -129,5 +136,27 @@ mod tests {
             Path::new("readme.txt"),
             &config.extensions
         ));
+    }
+
+    #[test]
+    #[ignore = "requires an interactive macOS session with Finder Automation permission granted; not available on headless CI runners"]
+    fn process_file_is_idempotent_once_tagged() {
+        let dir = std::env::temp_dir().join(format!("spine_matcher_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file_path = dir.join("Show.S01E02.mkv");
+        std::fs::write(&file_path, b"fake video content").unwrap();
+
+        let config = Config::default();
+
+        // First pass: the file gets tagged.
+        assert_eq!(
+            process_file(&file_path, &config),
+            Some("S01E02".to_string())
+        );
+        // Second pass over an already-correctly-tagged file must be a no-op,
+        // otherwise a watcher reacting to its own writes would loop forever.
+        assert_eq!(process_file(&file_path, &config), None);
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

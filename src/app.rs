@@ -2,6 +2,36 @@ use crate::config::{Config, PatternEntry};
 use crate::watcher::{self, LogMsg, WatcherHandle};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
+use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+use tray_icon::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
+
+fn load_tray_icon() -> Option<tray_icon::Icon> {
+    let bytes = include_bytes!("../assets/logo.png");
+    let img = image::load_from_memory(bytes)
+        .ok()?
+        .resize(44, 44, image::imageops::FilterType::Lanczos3)
+        .into_rgba8();
+    let (width, height) = img.dimensions();
+    tray_icon::Icon::from_rgba(img.into_raw(), width, height).ok()
+}
+
+fn build_tray_icon() -> Option<TrayIcon> {
+    let menu = Menu::new();
+    let toggle_item = MenuItem::with_id("toggle", "Afficher / Masquer Spine", true, None);
+    let quit_item = MenuItem::with_id("quit", "Quitter Spine", true, None);
+    menu.append(&toggle_item).ok()?;
+    menu.append(&PredefinedMenuItem::separator()).ok()?;
+    menu.append(&quit_item).ok()?;
+
+    TrayIconBuilder::new()
+        .with_menu(Box::new(menu))
+        .with_menu_on_left_click(false)
+        .with_icon(load_tray_icon()?)
+        .with_icon_as_template(true)
+        .with_tooltip("Spine")
+        .build()
+        .ok()
+}
 
 pub struct SpineApp {
     config: Arc<Mutex<Config>>,
@@ -9,6 +39,8 @@ pub struct SpineApp {
     log_tx: Sender<LogMsg>,
     log_rx: Receiver<LogMsg>,
     log_lines: Vec<String>,
+    window_visible: bool,
+    _tray_icon: Option<TrayIcon>,
 
     new_pattern_name: String,
     new_pattern_regex: String,
@@ -25,9 +57,41 @@ impl SpineApp {
             log_tx,
             log_rx,
             log_lines: Vec::new(),
+            window_visible: true,
+            _tray_icon: build_tray_icon(),
             new_pattern_name: String::new(),
             new_pattern_regex: String::new(),
             new_extension: String::new(),
+        }
+    }
+
+    fn toggle_window(&mut self, ctx: &egui::Context) {
+        self.window_visible = !self.window_visible;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(self.window_visible));
+        if self.window_visible {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+    }
+
+    fn handle_tray_events(&mut self, ctx: &egui::Context) {
+        if let Ok(TrayIconEvent::Click {
+            button: MouseButton::Left,
+            button_state: MouseButtonState::Up,
+            ..
+        }) = TrayIconEvent::receiver().try_recv()
+        {
+            self.toggle_window(ctx);
+        }
+
+        if let Ok(event) = MenuEvent::receiver().try_recv() {
+            match event.id.as_ref() {
+                "toggle" => self.toggle_window(ctx),
+                "quit" => {
+                    self.config.lock().unwrap().save();
+                    std::process::exit(0);
+                }
+                _ => {}
+            }
         }
     }
 
@@ -37,8 +101,7 @@ impl SpineApp {
 
     fn start_watching(&mut self) {
         self.watcher_handle = None; // stop any previous watcher first
-        let cfg_snapshot = self.config.lock().unwrap().clone();
-        watcher::initial_scan(&cfg_snapshot, &self.log_tx);
+        self.spawn_scan();
         match watcher::start(self.config.clone(), self.log_tx.clone()) {
             Ok(handle) => self.watcher_handle = Some(handle),
             Err(e) => {
@@ -50,6 +113,17 @@ impl SpineApp {
     fn stop_watching(&mut self) {
         self.watcher_handle = None;
         self.log_lines.push("Surveillance arretee.".to_string());
+    }
+
+    /// Runs the folder scan on a background thread so the UI never freezes,
+    /// even on a large library. Can also be triggered manually as a fallback
+    /// rescan, in case a filesystem event was ever missed.
+    fn spawn_scan(&self) {
+        let cfg_snapshot = self.config.lock().unwrap().clone();
+        let log_tx = self.log_tx.clone();
+        std::thread::spawn(move || {
+            watcher::initial_scan(&cfg_snapshot, &log_tx);
+        });
     }
 
     fn drain_logs(&mut self) {
@@ -72,10 +146,18 @@ impl SpineApp {
 impl eframe::App for SpineApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.drain_logs();
+        self.handle_tray_events(ctx);
+
+        if ctx.input(|i| i.viewport().close_requested()) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            self.window_visible = false;
+        }
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Spine");
             ui.label("Detecte des patterns (episodes, tomes...) dans les noms de fichiers et les ecrit dans le commentaire Finder, sans renommer les fichiers.");
+            ui.small("Astuce : fermer cette fenetre la reduit dans la barre de menu (icone en haut a droite) sans arreter la surveillance.");
             ui.separator();
 
             // --- Watched folder ---
@@ -104,6 +186,13 @@ impl eframe::App for SpineApp {
                     if ui.button("Demarrer").clicked() {
                         self.start_watching();
                     }
+                }
+                if ui
+                    .button("Rescanner")
+                    .on_hover_text("Relance une analyse complete du dossier, au cas ou un changement aurait ete manque.")
+                    .clicked()
+                {
+                    self.spawn_scan();
                 }
             });
 

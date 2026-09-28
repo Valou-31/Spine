@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::matcher;
-use notify::{Event, EventKind, RecursiveMode, Watcher};
+use notify::{Event, RecursiveMode, Watcher};
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
@@ -61,10 +61,10 @@ pub fn start(config: Arc<Mutex<Config>>, log_tx: Sender<LogMsg>) -> notify::Resu
                 return;
             }
         };
-        // Only react to events that can introduce/rename a matchable file.
-        if !matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_)) {
-            return;
-        }
+        // Don't filter by event kind: macOS FSEvents reports some file arrivals
+        // (e.g. a download tool renaming a .part file into place) as kinds that
+        // don't cleanly map to Create/Modify. process_file() below is cheap to
+        // call and already no-ops for anything that isn't a matching file.
         let cfg = event_config.lock().unwrap();
         for path in event.paths.iter() {
             if let Some(comment) = matcher::process_file(path, &cfg) {

@@ -80,6 +80,12 @@ ${ICON_PLIST_ENTRY}
 PLIST
 
 codesign --force --deep --sign - "$APP_DIR"
+touch "$APP_DIR"
+
+# Force LaunchServices/Dock to drop any cached icon for this bundle path from a
+# previous build, otherwise the Dock can keep showing a stale icon.
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+[ -x "$LSREGISTER" ] && "$LSREGISTER" -f "$APP_DIR" >/dev/null 2>&1
 
 echo "App bundle created at: $APP_DIR"
 
