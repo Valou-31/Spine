@@ -118,7 +118,14 @@ impl SpineApp {
             None => (None, None, None),
         };
 
-        let flag_fr = load_flag_texture(ctx, "flag_fr", include_bytes!("../assets/france.png"));
+        // Both PNGs are pre-cropped and resized to the exact same pixel
+        // dimensions by build.rs, so they render identically at the same
+        // fit_to_exact_size below with no residual scaling ambiguity.
+        let flag_fr = load_flag_texture(
+            ctx,
+            "flag_fr",
+            include_bytes!(concat!(env!("OUT_DIR"), "/fr_flag.png")),
+        );
         let flag_gb = load_flag_texture(
             ctx,
             "flag_gb",
