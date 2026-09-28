@@ -3,7 +3,7 @@ use crate::watcher::{self, LogMsg, WatcherHandle};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
-pub struct TaggerApp {
+pub struct SpineApp {
     config: Arc<Mutex<Config>>,
     watcher_handle: Option<WatcherHandle>,
     log_tx: Sender<LogMsg>,
@@ -15,11 +15,11 @@ pub struct TaggerApp {
     new_extension: String,
 }
 
-impl TaggerApp {
+impl SpineApp {
     pub fn new() -> Self {
         let config = Arc::new(Mutex::new(Config::load()));
         let (log_tx, log_rx) = channel();
-        TaggerApp {
+        SpineApp {
             config,
             watcher_handle: None,
             log_tx,
@@ -69,12 +69,12 @@ impl TaggerApp {
     }
 }
 
-impl eframe::App for TaggerApp {
+impl eframe::App for SpineApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.drain_logs();
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Finder Tagger");
+            ui.heading("Spine");
             ui.label("Detecte des patterns (episodes, tomes...) dans les noms de fichiers et les ecrit dans le commentaire Finder, sans renommer les fichiers.");
             ui.separator();
 

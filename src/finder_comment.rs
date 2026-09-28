@@ -55,7 +55,7 @@ mod tests {
     #[test]
     #[ignore = "requires an interactive macOS session with Finder Automation permission granted; not available on headless CI runners"]
     fn roundtrip_via_finder_apple_events() {
-        let dir = std::env::temp_dir().join(format!("finder_tagger_test_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("spine_test_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file_path = dir.join("Volume 6 - Épisode's \"test\".cbz");
         std::fs::write(&file_path, b"fake cbz content").unwrap();

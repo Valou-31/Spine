@@ -48,7 +48,7 @@ impl Default for Config {
 impl Config {
     fn config_path() -> PathBuf {
         let mut dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-        dir.push("FinderTagger");
+        dir.push("Spine");
         std::fs::create_dir_all(&dir).ok();
         dir.push("config.json");
         dir

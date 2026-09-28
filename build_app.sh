@@ -4,9 +4,9 @@ cd "$(dirname "$0")"
 
 cargo build --release
 
-APP_NAME="Finder Tagger"
+APP_NAME="Spine"
 APP_DIR="dist/${APP_NAME}.app"
-BIN_NAME="finder-tagger"
+BIN_NAME="spine"
 
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
@@ -24,7 +24,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <key>CFBundleDisplayName</key>
     <string>${APP_NAME}</string>
     <key>CFBundleIdentifier</key>
-    <string>com.valentin.findertagger</string>
+    <string>com.valentin.spine</string>
     <key>CFBundleVersion</key>
     <string>1.0</string>
     <key>CFBundleShortVersionString</key>

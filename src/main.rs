@@ -10,8 +10,8 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "Finder Tagger",
+        "Spine",
         native_options,
-        Box::new(|_cc| Ok(Box::new(app::TaggerApp::new()))),
+        Box::new(|_cc| Ok(Box::new(app::SpineApp::new()))),
     )
 }

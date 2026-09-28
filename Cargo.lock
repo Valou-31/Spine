@@ -1147,21 +1147,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
 
 [[package]]
-name = "finder-tagger"
-version = "0.1.0"
-dependencies = [
- "dirs",
- "eframe",
- "egui",
- "notify",
- "regex",
- "rfd",
- "serde",
- "serde_json",
- "walkdir",
-]
-
-[[package]]
 name = "flate2"
 version = "1.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3103,6 +3088,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd538fb6910ac1099850255cf94a94df6551fbdd602454387d0adb2d1ca6dead"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "spine"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "eframe",
+ "egui",
+ "notify",
+ "regex",
+ "rfd",
+ "serde",
+ "serde_json",
+ "walkdir",
 ]
 
 [[package]]
