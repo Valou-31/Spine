@@ -5,9 +5,16 @@ use std::process::Command;
 // does NOT reliably surface in Finder's Comments column / Get Info on current macOS:
 // Finder appears to keep its own authoritative store and only mirrors it back to that
 // xattr when Finder itself performs the write. Going through Finder via Apple Events
-// (AppleScript) is the only method verified to actually work end-to-end.
-// The first call triggers a one-time macOS prompt asking to allow this app to
+// (AppleScript) is the only method verified to actually work end-to-end for *writes*.
+// The first write triggers a one-time macOS prompt asking to allow this app to
 // control "Finder" (Automation permission) - it must be accepted.
+//
+// Reads are the opposite trade-off: once Finder has written a comment, it does
+// mirror it into that same extended attribute, so we can read it directly
+// without spawning a process - much cheaper, which matters since a full
+// rescan reads every matching file's current comment to decide whether a
+// write is even needed.
+const ATTR_NAME: &str = "com.apple.metadata:kMDItemFinderComment";
 
 fn escape_applescript_string(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
@@ -24,17 +31,12 @@ fn run_osascript(script: &str) -> std::io::Result<String> {
         .to_string())
 }
 
-/// Reads the current Finder comment of a file, if any.
+/// Reads the current Finder comment of a file, if any, straight from the
+/// extended attribute (no subprocess).
 pub fn get_comment(path: &Path) -> Option<String> {
-    let posix_path = escape_applescript_string(&path.to_string_lossy());
-    let script = format!(
-        "tell application \"Finder\" to get comment of (POSIX file \"{}\" as alias)",
-        posix_path
-    );
-    match run_osascript(&script) {
-        Ok(s) if !s.is_empty() => Some(s),
-        _ => None,
-    }
+    let bytes = xattr::get(path, ATTR_NAME).ok().flatten()?;
+    let value: plist::Value = plist::from_bytes(&bytes).ok()?;
+    value.into_string()
 }
 
 /// Writes (overwriting) the Finder comment of a file.

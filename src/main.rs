@@ -12,6 +12,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Spine",
         native_options,
-        Box::new(|_cc| Ok(Box::new(app::SpineApp::new()))),
+        Box::new(|cc| Ok(Box::new(app::SpineApp::new(&cc.egui_ctx)))),
     )
 }

@@ -1,5 +1,5 @@
 use crate::config::{Config, PatternEntry};
-use crate::watcher::{self, LogMsg, WatcherHandle};
+use crate::watcher::{self, LogMsg, Waker, WatcherHandle};
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -59,7 +59,10 @@ pub struct SpineApp {
     log_rx: Receiver<LogMsg>,
     log_lines: Vec<String>,
     window_visible: bool,
+    waker: Waker,
     _tray_icon: Option<TrayIcon>,
+    tray_event_rx: Receiver<TrayIconEvent>,
+    menu_event_rx: Receiver<MenuEvent>,
 
     new_pattern_name: String,
     new_pattern_regex: String,
@@ -67,9 +70,32 @@ pub struct SpineApp {
 }
 
 impl SpineApp {
-    pub fn new() -> Self {
+    /// The app never requests periodic repaints: everything that can happen
+    /// in the background (watcher activity, tray/menu clicks) wakes the UI
+    /// explicitly via this `ctx.request_repaint()`, so an idle app truly does
+    /// nothing between user interactions instead of redrawing on a timer.
+    pub fn new(ctx: &egui::Context) -> Self {
         let config = Arc::new(Mutex::new(Config::load()));
         let (log_tx, log_rx) = channel();
+        let waker: Waker = {
+            let ctx = ctx.clone();
+            Arc::new(move || ctx.request_repaint())
+        };
+
+        let (tray_tx, tray_event_rx) = channel();
+        let tray_ctx = ctx.clone();
+        TrayIconEvent::set_event_handler(Some(move |event| {
+            tray_tx.send(event).ok();
+            tray_ctx.request_repaint();
+        }));
+
+        let (menu_tx, menu_event_rx) = channel();
+        let menu_ctx = ctx.clone();
+        MenuEvent::set_event_handler(Some(move |event| {
+            menu_tx.send(event).ok();
+            menu_ctx.request_repaint();
+        }));
+
         SpineApp {
             config,
             watcher_handle: None,
@@ -77,7 +103,10 @@ impl SpineApp {
             log_rx,
             log_lines: Vec::new(),
             window_visible: true,
+            waker,
             _tray_icon: build_tray_icon(),
+            tray_event_rx,
+            menu_event_rx,
             new_pattern_name: String::new(),
             new_pattern_regex: String::new(),
             new_extension: String::new(),
@@ -98,12 +127,12 @@ impl SpineApp {
             button: MouseButton::Left,
             button_state: MouseButtonState::Up,
             ..
-        }) = TrayIconEvent::receiver().try_recv()
+        }) = self.tray_event_rx.try_recv()
         {
             self.toggle_window(ctx);
         }
 
-        if let Ok(event) = MenuEvent::receiver().try_recv() {
+        if let Ok(event) = self.menu_event_rx.try_recv() {
             match event.id.as_ref() {
                 "toggle" => self.toggle_window(ctx),
                 "quit" => {
@@ -122,7 +151,7 @@ impl SpineApp {
     fn start_watching(&mut self) {
         self.watcher_handle = None; // stop any previous watcher first
         self.spawn_scan();
-        match watcher::start(self.config.clone(), self.log_tx.clone()) {
+        match watcher::start(self.config.clone(), self.log_tx.clone(), self.waker.clone()) {
             Ok(handle) => self.watcher_handle = Some(handle),
             Err(e) => {
                 self.log_lines.push(format!("Erreur au demarrage: {}", e));
@@ -141,8 +170,9 @@ impl SpineApp {
     fn spawn_scan(&self) {
         let cfg_snapshot = self.config.lock().unwrap().clone();
         let log_tx = self.log_tx.clone();
+        let waker = self.waker.clone();
         std::thread::spawn(move || {
-            watcher::initial_scan(&cfg_snapshot, &log_tx);
+            watcher::initial_scan(&cfg_snapshot, &log_tx, &waker);
         });
     }
 
@@ -329,8 +359,6 @@ impl eframe::App for SpineApp {
                 }
             });
         });
-
-        ctx.request_repaint_after(std::time::Duration::from_millis(300));
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {

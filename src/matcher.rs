@@ -1,7 +1,39 @@
-use crate::config::Config;
+use crate::config::{Config, PatternEntry};
 use crate::finder_comment;
 use regex::Regex;
 use std::path::Path;
+
+/// Compiling a regex isn't free, so we compile each enabled pattern once and
+/// reuse it for every file instead of recompiling per file/event. `refresh`
+/// is cheap to call unconditionally before each use: it only rebuilds when
+/// the source patterns actually changed since last time.
+#[derive(Default)]
+pub struct CompiledPatterns {
+    source: Vec<PatternEntry>,
+    compiled: Vec<Regex>,
+}
+
+impl CompiledPatterns {
+    pub fn refresh(&mut self, patterns: &[PatternEntry]) {
+        if self.source == patterns {
+            return;
+        }
+        self.compiled = patterns
+            .iter()
+            .filter(|p| p.enabled)
+            .filter_map(|p| Regex::new(&p.regex).ok())
+            .collect();
+        self.source = patterns.to_vec();
+    }
+
+    fn detect_tags(&self, filename: &str) -> Vec<String> {
+        self.compiled
+            .iter()
+            .filter_map(|re| re.find(filename))
+            .map(|m| m.as_str().to_string())
+            .collect()
+    }
+}
 
 fn extension_allowed(path: &Path, extensions: &[String]) -> bool {
     match path.extension().and_then(|e| e.to_str()) {
@@ -12,23 +44,9 @@ fn extension_allowed(path: &Path, extensions: &[String]) -> bool {
     }
 }
 
-fn detect_tags(filename: &str, config: &Config) -> Vec<String> {
-    let mut tags = Vec::new();
-    for pattern in config.patterns.iter().filter(|p| p.enabled) {
-        let re = match Regex::new(&pattern.regex) {
-            Ok(re) => re,
-            Err(_) => continue,
-        };
-        if let Some(m) = re.find(filename) {
-            tags.push(m.as_str().to_string());
-        }
-    }
-    tags
-}
-
 /// Inspects a single file and, if a pattern matches, writes/updates its Finder comment.
 /// Returns Some(comment written) on success, None if nothing was done.
-pub fn process_file(path: &Path, config: &Config) -> Option<String> {
+pub fn process_file(path: &Path, config: &Config, patterns: &CompiledPatterns) -> Option<String> {
     if !path.is_file() {
         return None;
     }
@@ -36,7 +54,7 @@ pub fn process_file(path: &Path, config: &Config) -> Option<String> {
         return None;
     }
     let filename = path.file_name()?.to_str()?;
-    let tags = detect_tags(filename, config);
+    let tags = patterns.detect_tags(filename);
     if tags.is_empty() {
         return None;
     }
@@ -74,7 +92,9 @@ mod tests {
 
     fn tags_for(filename: &str) -> Vec<String> {
         let config = Config::default();
-        detect_tags(filename, &config)
+        let mut patterns = CompiledPatterns::default();
+        patterns.refresh(&config.patterns);
+        patterns.detect_tags(filename)
     }
 
     #[test]
@@ -147,15 +167,17 @@ mod tests {
         std::fs::write(&file_path, b"fake video content").unwrap();
 
         let config = Config::default();
+        let mut patterns = CompiledPatterns::default();
+        patterns.refresh(&config.patterns);
 
         // First pass: the file gets tagged.
         assert_eq!(
-            process_file(&file_path, &config),
+            process_file(&file_path, &config, &patterns),
             Some("S01E02".to_string())
         );
         // Second pass over an already-correctly-tagged file must be a no-op,
         // otherwise a watcher reacting to its own writes would loop forever.
-        assert_eq!(process_file(&file_path, &config), None);
+        assert_eq!(process_file(&file_path, &config, &patterns), None);
 
         std::fs::remove_dir_all(&dir).ok();
     }

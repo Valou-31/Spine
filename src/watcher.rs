@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::matcher;
+use crate::matcher::{self, CompiledPatterns};
 use notify::{Event, RecursiveMode, Watcher};
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
@@ -11,53 +11,77 @@ pub enum LogMsg {
     Error(String),
 }
 
+/// Called after every log message so the UI can wake up and repaint - the app
+/// requests no periodic repaints on its own, so without this a message would
+/// just sit in the channel until some unrelated input event drew a frame.
+pub type Waker = Arc<dyn Fn() + Send + Sync>;
+
 pub struct WatcherHandle {
     _watcher: notify::RecommendedWatcher,
 }
 
+fn send(log_tx: &Sender<LogMsg>, waker: &Waker, msg: LogMsg) {
+    log_tx.send(msg).ok();
+    waker();
+}
+
 /// Scans the watched folder once, tagging any already-present files that match.
-pub fn initial_scan(config: &Config, log_tx: &Sender<LogMsg>) {
-    log_tx
-        .send(LogMsg::Info(format!(
+pub fn initial_scan(config: &Config, log_tx: &Sender<LogMsg>, waker: &Waker) {
+    send(
+        log_tx,
+        waker,
+        LogMsg::Info(format!(
             "Scan initial de {}...",
             config.watched_folder.display()
-        )))
-        .ok();
+        )),
+    );
+    let mut patterns = CompiledPatterns::default();
+    patterns.refresh(&config.patterns);
+
     let mut count = 0;
     for entry in walkdir::WalkDir::new(&config.watched_folder)
         .into_iter()
         .filter_map(|e| e.ok())
     {
-        if let Some(comment) = matcher::process_file(entry.path(), config) {
+        if let Some(comment) = matcher::process_file(entry.path(), config, &patterns) {
             count += 1;
-            log_tx
-                .send(LogMsg::Tagged {
+            send(
+                log_tx,
+                waker,
+                LogMsg::Tagged {
                     path: entry.path().to_path_buf(),
                     comment,
-                })
-                .ok();
+                },
+            );
         }
     }
-    log_tx
-        .send(LogMsg::Info(format!(
-            "Scan initial termine ({} fichier(s) tague(s)).",
-            count
-        )))
-        .ok();
+    send(
+        log_tx,
+        waker,
+        LogMsg::Info(format!(
+            "Scan initial termine ({count} fichier(s) tague(s))."
+        )),
+    );
 }
 
 /// Starts watching `config.watched_folder` (and subfolders) for changes.
 /// The returned handle keeps the watcher alive; drop it to stop watching.
-pub fn start(config: Arc<Mutex<Config>>, log_tx: Sender<LogMsg>) -> notify::Result<WatcherHandle> {
+pub fn start(
+    config: Arc<Mutex<Config>>,
+    log_tx: Sender<LogMsg>,
+    waker: Waker,
+) -> notify::Result<WatcherHandle> {
     let watch_path = config.lock().unwrap().watched_folder.clone();
 
     let event_config = config.clone();
     let event_tx = log_tx.clone();
+    let event_waker = waker.clone();
+    let mut patterns = CompiledPatterns::default();
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
         let event = match res {
             Ok(e) => e,
             Err(e) => {
-                event_tx.send(LogMsg::Error(e.to_string())).ok();
+                send(&event_tx, &event_waker, LogMsg::Error(e.to_string()));
                 return;
             }
         };
@@ -66,25 +90,27 @@ pub fn start(config: Arc<Mutex<Config>>, log_tx: Sender<LogMsg>) -> notify::Resu
         // don't cleanly map to Create/Modify. process_file() below is cheap to
         // call and already no-ops for anything that isn't a matching file.
         let cfg = event_config.lock().unwrap();
+        patterns.refresh(&cfg.patterns);
         for path in event.paths.iter() {
-            if let Some(comment) = matcher::process_file(path, &cfg) {
-                event_tx
-                    .send(LogMsg::Tagged {
+            if let Some(comment) = matcher::process_file(path, &cfg, &patterns) {
+                send(
+                    &event_tx,
+                    &event_waker,
+                    LogMsg::Tagged {
                         path: path.clone(),
                         comment,
-                    })
-                    .ok();
+                    },
+                );
             }
         }
     })?;
 
     watcher.watch(&watch_path, RecursiveMode::Recursive)?;
-    log_tx
-        .send(LogMsg::Info(format!(
-            "Surveillance active sur {}",
-            watch_path.display()
-        )))
-        .ok();
+    send(
+        &log_tx,
+        &waker,
+        LogMsg::Info(format!("Surveillance active sur {}", watch_path.display())),
+    );
 
     Ok(WatcherHandle { _watcher: watcher })
 }
