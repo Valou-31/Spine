@@ -3,13 +3,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Rasterizes an SVG into a PNG via the built-in QuickLook thumbnailer. ffmpeg
-/// on this platform has no SVG decoder, so this is the only readily available
-/// renderer. `qlmanage -t` always produces a *square* thumbnail: if the SVG's
-/// content doesn't fill it, it scales to fill the full width and pads the
-/// remaining height with opaque white, top-anchored. `content_aspect` (width
-/// / height of the SVG's own viewBox) lets us crop that padding back off.
-fn rasterize_svg(svg_path: &str, out_dir: &Path, size: u32, content_aspect: f32) -> PathBuf {
+/// Rasterizes an SVG into a square PNG via the built-in QuickLook
+/// thumbnailer. ffmpeg on this platform has no SVG decoder, so this is the
+/// only readily available renderer. `qlmanage -t` always produces a *square*
+/// thumbnail, padding with opaque white around content that doesn't fill it;
+/// callers that care about the content's own aspect ratio should trim that
+/// padding back off afterwards (see `trim_to_content`).
+fn rasterize_svg(svg_path: &str, out_dir: &Path, size: u32) -> PathBuf {
     println!("cargo:rerun-if-changed={svg_path}");
 
     let ql_dir = out_dir.join(format!(
@@ -32,19 +32,45 @@ fn rasterize_svg(svg_path: &str, out_dir: &Path, size: u32, content_aspect: f32)
         Path::new(svg_path).file_name().unwrap().to_string_lossy()
     ));
 
-    let content_height = (size as f32 / content_aspect).round() as u32;
-    let cropped = image::open(&generated)
-        .unwrap_or_else(|e| panic!("failed to open qlmanage output {generated:?}: {e}"))
-        .crop_imm(0, 0, size, content_height.min(size));
-
     let dest = out_dir.join(format!(
         "{}.png",
         Path::new(svg_path).file_stem().unwrap().to_string_lossy()
     ));
-    cropped
-        .save(&dest)
-        .unwrap_or_else(|e| panic!("failed to save rasterized {svg_path} to {dest:?}: {e}"));
+    fs::copy(&generated, &dest)
+        .unwrap_or_else(|e| panic!("failed to copy rasterized {svg_path} to {dest:?}: {e}"));
     dest
+}
+
+/// Crops an image down to the tight bounding box of its non-white content,
+/// discarding any surrounding padding. Used instead of guessing where a
+/// renderer anchors its padding (which can vary) - measuring the actual
+/// pixels is the only way to get a crop that's reliably centered.
+fn trim_to_content(path: &Path) {
+    let img = image::open(path)
+        .unwrap_or_else(|e| panic!("failed to open {path:?} for trimming: {e}"))
+        .into_rgba8();
+    let (w, h) = img.dimensions();
+    const THRESHOLD: u8 = 250;
+    let is_content =
+        |x: u32, y: u32| img.get_pixel(x, y).0[..3].iter().min().copied().unwrap() < THRESHOLD;
+
+    let (mut min_x, mut max_x, mut min_y, mut max_y) = (w, 0, h, 0);
+    for y in 0..h {
+        for x in 0..w {
+            if is_content(x, y) {
+                min_x = min_x.min(x);
+                max_x = max_x.max(x);
+                min_y = min_y.min(y);
+                max_y = max_y.max(y);
+            }
+        }
+    }
+    assert!(min_x <= max_x && min_y <= max_y, "{path:?} has no non-white content");
+
+    image::DynamicImage::ImageRgba8(img)
+        .crop_imm(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
+        .save(path)
+        .unwrap_or_else(|e| panic!("failed to save trimmed {path:?}: {e}"));
 }
 
 /// Center-crops an image to a target aspect ratio (width / height). Used to
@@ -96,13 +122,15 @@ fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
 
     // App/tray icon: square with transparency around the logo shape.
-    let tray_icon = rasterize_svg("assets/logo.svg", &out_dir, 256, 1.0);
+    let tray_icon = rasterize_svg("assets/logo.svg", &out_dir, 256);
     strip_white_background(&tray_icon);
     fs::rename(&tray_icon, out_dir.join("tray_icon.png")).unwrap();
 
-    // UK flag for the language toggle: fully opaque, viewBox is 50x30 (no
-    // white stripping needed, just cropping off qlmanage's padding).
-    let gb_flag = rasterize_svg("assets/gb.svg", &out_dir, 240, 50.0 / 30.0);
+    // UK flag for the language toggle: fully opaque, so trim straight to the
+    // rendered content's bounding box rather than assuming where qlmanage
+    // put its padding - that keeps the flag centered either way.
+    let gb_flag = rasterize_svg("assets/gb.svg", &out_dir, 240);
+    trim_to_content(&gb_flag);
     // Match the France flag's own aspect ratio so both fill the same UI
     // button size with no gap on either one.
     let (fr_w, fr_h) = image::image_dimensions("assets/france.png")
