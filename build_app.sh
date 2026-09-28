@@ -15,13 +15,18 @@ mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "target/release/${BIN_NAME}" "$APP_DIR/Contents/MacOS/${APP_NAME}"
 chmod +x "$APP_DIR/Contents/MacOS/${APP_NAME}"
 
-# --- App icon: crop the character/wolf square out of the wide source logo, then
-# build a standard .iconset and compile it to .icns with the built-in iconutil. ---
+# --- App icon: pad the source logo to a square canvas, then build a standard
+# .iconset and compile it to .icns with the built-in iconutil. ---
 if [ -f "$LOGO" ] && command -v ffmpeg >/dev/null && command -v iconutil >/dev/null; then
     ICON_TMP="$(mktemp -d)"
     trap 'rm -rf "$ICON_TMP"' EXIT
 
-    ffmpeg -y -loglevel error -i "$LOGO" -vf "crop=2160:2160:650:0" -update 1 "$ICON_TMP/icon-square.png"
+    LOGO_W=$(sips -g pixelWidth "$LOGO" | awk '/pixelWidth/{print $2}')
+    LOGO_H=$(sips -g pixelHeight "$LOGO" | awk '/pixelHeight/{print $2}')
+    SIDE=$((LOGO_W > LOGO_H ? LOGO_W : LOGO_H))
+    ffmpeg -y -loglevel error -i "$LOGO" \
+        -vf "format=rgba,pad=${SIDE}:${SIDE}:(${SIDE}-${LOGO_W})/2:(${SIDE}-${LOGO_H})/2:color=0x00000000" \
+        "$ICON_TMP/icon-square.png"
 
     ICONSET="$ICON_TMP/AppIcon.iconset"
     mkdir -p "$ICONSET"
