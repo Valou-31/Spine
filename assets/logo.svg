@@ -1,0 +1,48 @@
+<svg version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+	<defs>
+		<radialGradient id="g1" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="matrix(83.788,0,0,83.788,235.477,316.128)">
+			<stop offset=".2" stop-color="#ffa200"/>
+			<stop offset="1" stop-color="#ff5a00"/>
+		</radialGradient>
+		<radialGradient id="g2" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="matrix(157.326,0,0,157.326,466.01,232.303)">
+			<stop offset=".2" stop-color="#ffa200"/>
+			<stop offset="1" stop-color="#ff5a00"/>
+		</radialGradient>
+		<linearGradient id="g3" x2="1" gradientUnits="userSpaceOnUse" gradientTransform="matrix(444.986,0,0,.606,243.517,232)">
+			<stop offset=".33" stop-color="#ffa200"/>
+			<stop offset="1" stop-color="#ff5a00"/>
+		</linearGradient>
+		<radialGradient id="g4" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="matrix(83.788,0,0,83.788,552.54,484.066)">
+			<stop offset=".2" stop-color="#ffa200"/>
+			<stop offset="1" stop-color="#ff5a00"/>
+		</radialGradient>
+		<linearGradient id="g5" x2="1" gradientUnits="userSpaceOnUse" gradientTransform="matrix(444.986,0,0,.606,112,567.117)">
+			<stop offset="0" stop-color="#ffffff"/>
+			<stop offset="1" stop-color="#000000"/>
+		</linearGradient>
+		<linearGradient id="g6" x2="1" gradientUnits="userSpaceOnUse" gradientTransform="matrix(444.986,0,0,.606,112,567.117)">
+			<stop offset="0" stop-color="#ff5a00"/>
+			<stop offset=".66" stop-color="#ffa200"/>
+		</linearGradient>
+	</defs>
+	<style>
+		.s0 { fill: url(#g1);stroke: #ffa200;stroke-linecap: round;stroke-linejoin: round;stroke-width: 70 } 
+		.s1 { fill: url(#g2);stroke: url(#g3);stroke-linecap: round;stroke-linejoin: round;stroke-width: 70 } 
+		.s2 { fill: url(#g4);stroke: #ffa200;stroke-linecap: round;stroke-linejoin: round;stroke-width: 70 } 
+		.s3 { fill: url(#g5);stroke: url(#g6);stroke-linecap: round;stroke-linejoin: round;stroke-width: 70 } 
+		.s4 { fill: #b46a00;stroke: #ffa200;stroke-linecap: round;stroke-linejoin: round;stroke-width: 70 } 
+	</style>
+	<g id="Layer 1">
+		<g id="Dossier 2">
+			<g id="&lt;Group&gt;">
+				<path id="Forme 3" fill-rule="evenodd" class="s0" d="m204.88 394.09c-43.11-16.92-64.28-65.45-47.36-108.56 16.92-43.11 65.44-64.28 108.55-47.36 43.12 16.92 64.29 65.44 47.37 108.55-16.92 43.12-65.45 64.29-108.56 47.37z"/>
+				<path id="Forme 3" fill-rule="evenodd" class="s1" d="m243.52 232l444.98 0.61z"/>
+			</g>
+			<g id="&lt;Group&gt;">
+				<path id="Forme 1 copy 2" fill-rule="evenodd" class="s2" d="m521.94 562.03c-43.11-16.92-64.28-65.45-47.36-108.56 16.92-43.11 65.44-64.28 108.56-47.36 43.11 16.92 64.28 65.44 47.36 108.55-16.92 43.12-65.44 64.29-108.56 47.37z"/>
+				<path id="Forme 1 copy 2" fill-rule="evenodd" class="s3" d="m112 567.12l444.99 0.6z"/>
+			</g>
+			<path id="Forme 1 copy" fill-rule="evenodd" class="s4" d="m228.24 399.48l334.79 1.46z"/>
+		</g>
+	</g>
+</svg>

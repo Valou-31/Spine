@@ -7,7 +7,7 @@ cargo build --release
 APP_NAME="Spine"
 APP_DIR="dist/${APP_NAME}.app"
 BIN_NAME="spine"
-LOGO="assets/logo.png"
+LOGO="assets/logo.svg"
 BACKGROUND_SVG="assets/dmg-background.svg"
 VERSION="$(grep '^version' Cargo.toml | head -1 | sed -E 's/version = "(.*)"/\1/')"
 
@@ -23,10 +23,13 @@ if [ -f "$LOGO" ] && command -v ffmpeg >/dev/null && command -v iconutil >/dev/n
     ICON_TMP="$(mktemp -d)"
     trap 'rm -rf "$ICON_TMP"' EXIT
 
-    LOGO_W=$(sips -g pixelWidth "$LOGO" | awk '/pixelWidth/{print $2}')
-    LOGO_H=$(sips -g pixelHeight "$LOGO" | awk '/pixelHeight/{print $2}')
+    LOGO_PNG="$ICON_TMP/logo.png"
+    ffmpeg -y -loglevel error -i "$LOGO" -vf "scale=1024:1024" "$LOGO_PNG"
+
+    LOGO_W=$(sips -g pixelWidth "$LOGO_PNG" | awk '/pixelWidth/{print $2}')
+    LOGO_H=$(sips -g pixelHeight "$LOGO_PNG" | awk '/pixelHeight/{print $2}')
     SIDE=$((LOGO_W > LOGO_H ? LOGO_W : LOGO_H))
-    ffmpeg -y -loglevel error -i "$LOGO" \
+    ffmpeg -y -loglevel error -i "$LOGO_PNG" \
         -vf "format=rgba,pad=${SIDE}:${SIDE}:(${SIDE}-${LOGO_W})/2:(${SIDE}-${LOGO_H})/2:color=0x00000000" \
         "$ICON_TMP/icon-square.png"
 
