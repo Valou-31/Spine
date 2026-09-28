@@ -69,4 +69,12 @@ ${ICON_PLIST_ENTRY}
 </plist>
 PLIST
 
+codesign --force --deep --sign - "$APP_DIR"
+
 echo "App bundle created at: $APP_DIR"
+
+# --- Distributable .dmg ---
+DMG_PATH="dist/${APP_NAME}.dmg"
+rm -f "$DMG_PATH"
+hdiutil create -volname "$APP_NAME" -srcfolder "$APP_DIR" -ov -format UDZO "$DMG_PATH" >/dev/null
+echo "Disk image created at: $DMG_PATH"

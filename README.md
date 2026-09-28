@@ -2,36 +2,40 @@
 
 [![CI](https://github.com/Valou-31/Spine/actions/workflows/ci.yml/badge.svg)](https://github.com/Valou-31/Spine/actions/workflows/ci.yml)
 
-Petite app macOS qui surveille un dossier de séries/mangas et fait remonter le numéro d'épisode ou de tome — souvent caché en fin de nom de fichier — dans le commentaire Finder, sans renommer les fichiers ni élargir la colonne Nom.
+A small macOS app that watches a folder of TV series / manga and surfaces the episode or volume number — often buried at the end of a long filename — into the Finder comment, without renaming files or having to widen the Name column.
 
-## Comment ça marche
+## How it works
 
-- Surveille un dossier (et ses sous-dossiers) en tâche de fond.
-- Détecte des patterns par regex dans le nom des fichiers (`S01E05`, `T01`, `Vol.05`, `Volume 6`...).
-- Écrit le résultat dans le commentaire Finder du fichier, via Finder lui-même (Apple Events) — c'est la seule méthode qui fonctionne réellement, écrire l'attribut étendu directement ne suffit pas.
-- Active la colonne **Commentaires** dans Finder (Présentation > Options de présentation) pour voir le résultat.
+- Watches a folder (and its subfolders) in the background.
+- Detects patterns via regex in filenames (`S01E05`, `T01`, `Vol.05`, `Volume 6`...).
+- Writes the result to the file's Finder comment, going through Finder itself (Apple Events) — the only method that actually works; writing the extended attribute directly is not enough.
+- Enable the **Comments** column in Finder (View > Show View Options) to see the result.
 
-## Build & lancement
+## Download
+
+Grab the `.dmg` from the [latest release](https://github.com/Valou-31/Spine/releases/latest), drag `Spine.app` to Applications, and open it. The app is unsigned, so on first launch macOS will refuse to open it — right-click the app and choose "Open" to bypass Gatekeeper.
+
+## Build & run from source
 
 ```
 cargo build --release
-./build_app.sh          # génère dist/Spine.app (avec icône)
+./build_app.sh          # produces dist/Spine.app (with icon)
 open "dist/Spine.app"
 ```
 
-Au premier clic sur "Démarrer", macOS demande l'autorisation de contrôler Finder (Automation) — à accepter.
+On the first click on "Démarrer" (Start), macOS will ask for permission to control Finder (Automation) — accept it.
 
-## Utilisation
+## Usage
 
-Dans l'interface : dossier à surveiller, liste de patterns (regex, activables/désactivables), extensions de fichiers surveillées, et option d'écraser ou non un commentaire existant. Tout est sauvegardé automatiquement.
+In the app: folder to watch, list of patterns (regex, can be enabled/disabled), watched file extensions, and whether to overwrite an existing comment. Everything is saved automatically.
 
-Patterns par défaut :
+Default patterns:
 
-| Nom | Exemple détecté |
+| Name | Example match |
 |---|---|
 | Episode (SxxExx) | `S01E05` |
 | Tome/Volume | `T01`, `Vol.05`, `Volume 6` |
 
 ## Configuration
 
-Sauvegardée dans `~/Library/Application Support/Spine/config.json`.
+Saved to `~/Library/Application Support/Spine/config.json`.
