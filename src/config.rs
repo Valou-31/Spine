@@ -1,3 +1,4 @@
+use crate::i18n::Language;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -15,6 +16,8 @@ pub struct Config {
     pub extensions: Vec<String>,
     /// true = overwrite existing Finder comment; false = append/preserve.
     pub overwrite: bool,
+    #[serde(default)]
+    pub language: Language,
 }
 
 impl Default for Config {
@@ -41,6 +44,7 @@ impl Default for Config {
             .map(String::from)
             .collect(),
             overwrite: true,
+            language: Language::default(),
         }
     }
 }

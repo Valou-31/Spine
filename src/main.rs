@@ -1,6 +1,7 @@
 mod app;
 mod config;
 mod finder_comment;
+mod i18n;
 mod matcher;
 mod watcher;
 

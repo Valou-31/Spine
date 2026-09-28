@@ -1,4 +1,5 @@
 use crate::config::{Config, PatternEntry};
+use crate::i18n::Language;
 use crate::watcher::{self, LogMsg, Waker, WatcherHandle};
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
@@ -35,22 +36,23 @@ fn load_tray_icon() -> Option<tray_icon::Icon> {
     tray_icon::Icon::from_rgba(img.into_raw(), width, height).ok()
 }
 
-fn build_tray_icon() -> Option<TrayIcon> {
+fn build_tray_icon(lang: Language) -> Option<(TrayIcon, MenuItem, MenuItem)> {
     let menu = Menu::new();
-    let toggle_item = MenuItem::with_id("toggle", "Afficher / Masquer Spine", true, None);
-    let quit_item = MenuItem::with_id("quit", "Quitter Spine", true, None);
+    let toggle_item = MenuItem::with_id("toggle", lang.tray_toggle(), true, None);
+    let quit_item = MenuItem::with_id("quit", lang.tray_quit(), true, None);
     menu.append(&toggle_item).ok()?;
     menu.append(&PredefinedMenuItem::separator()).ok()?;
     menu.append(&quit_item).ok()?;
 
-    TrayIconBuilder::new()
+    let tray_icon = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
         .with_menu_on_left_click(false)
         .with_icon(load_tray_icon()?)
         .with_icon_as_template(true)
         .with_tooltip("Spine")
         .build()
-        .ok()
+        .ok()?;
+    Some((tray_icon, toggle_item, quit_item))
 }
 
 pub struct SpineApp {
@@ -62,6 +64,9 @@ pub struct SpineApp {
     window_visible: bool,
     waker: Waker,
     _tray_icon: Option<TrayIcon>,
+    tray_toggle_item: Option<MenuItem>,
+    tray_quit_item: Option<MenuItem>,
+    tray_lang: Language,
     tray_event_rx: Receiver<TrayIconEvent>,
     menu_event_rx: Receiver<MenuEvent>,
 
@@ -77,6 +82,7 @@ impl SpineApp {
     /// nothing between user interactions instead of redrawing on a timer.
     pub fn new(ctx: &egui::Context) -> Self {
         let config = Arc::new(Mutex::new(Config::load()));
+        let lang = config.lock().unwrap().language;
         let (log_tx, log_rx) = channel();
         let waker: Waker = {
             let ctx = ctx.clone();
@@ -97,6 +103,11 @@ impl SpineApp {
             menu_ctx.request_repaint();
         }));
 
+        let (tray_icon, toggle_item, quit_item) = match build_tray_icon(lang) {
+            Some((icon, toggle, quit)) => (Some(icon), Some(toggle), Some(quit)),
+            None => (None, None, None),
+        };
+
         SpineApp {
             config,
             watcher_handle: None,
@@ -105,7 +116,10 @@ impl SpineApp {
             log_lines: VecDeque::new(),
             window_visible: true,
             waker,
-            _tray_icon: build_tray_icon(),
+            _tray_icon: tray_icon,
+            tray_toggle_item: toggle_item,
+            tray_quit_item: quit_item,
+            tray_lang: lang,
             tray_event_rx,
             menu_event_rx,
             new_pattern_name: String::new(),
@@ -152,19 +166,37 @@ impl SpineApp {
     fn start_watching(&mut self) {
         self.watcher_handle = None; // stop any previous watcher first
         self.spawn_scan();
+        let lang = self.config.lock().unwrap().language;
         match watcher::start(self.config.clone(), self.log_tx.clone(), self.waker.clone()) {
             Ok(handle) => self.watcher_handle = Some(handle),
             Err(e) => {
-                self.log_lines
-                    .push_back(format!("Erreur au demarrage: {}", e));
+                self.log_lines.push_back(lang.start_error(&e.to_string()));
             }
         }
     }
 
     fn stop_watching(&mut self) {
         self.watcher_handle = None;
+        let lang = self.config.lock().unwrap().language;
         self.log_lines
-            .push_back("Surveillance arretee.".to_string());
+            .push_back(lang.watching_stopped_log().to_string());
+    }
+
+    /// Keeps the tray menu item labels in sync with the current language,
+    /// since they're created once at startup but the language can change
+    /// live while the app is running.
+    fn sync_tray_language(&mut self) {
+        let lang = self.config.lock().unwrap().language;
+        if lang == self.tray_lang {
+            return;
+        }
+        if let Some(item) = &self.tray_toggle_item {
+            item.set_text(lang.tray_toggle());
+        }
+        if let Some(item) = &self.tray_quit_item {
+            item.set_text(lang.tray_quit());
+        }
+        self.tray_lang = lang;
     }
 
     /// Runs the folder scan on a background thread so the UI never freezes,
@@ -180,13 +212,14 @@ impl SpineApp {
     }
 
     fn drain_logs(&mut self) {
+        let lang = self.config.lock().unwrap().language;
         while let Ok(msg) = self.log_rx.try_recv() {
             let line = match msg {
                 LogMsg::Tagged { path, comment } => {
-                    format!("[TAG] {} -> \"{}\"", path.display(), comment)
+                    lang.log_tag(&path.display().to_string(), &comment)
                 }
-                LogMsg::Info(s) => format!("[INFO] {}", s),
-                LogMsg::Error(s) => format!("[ERREUR] {}", s),
+                LogMsg::Info(s) => lang.log_info(&s),
+                LogMsg::Error(s) => lang.log_error(&s),
             };
             self.log_lines.push_back(line);
             if self.log_lines.len() > 500 {
@@ -200,6 +233,7 @@ impl eframe::App for SpineApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.drain_logs();
         self.handle_tray_events(ctx);
+        self.sync_tray_language();
 
         if ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -208,21 +242,50 @@ impl eframe::App for SpineApp {
             self.window_visible = false;
         }
 
+        let lang = self.config.lock().unwrap().language;
+
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Spine");
-            ui.label("Detecte des patterns (episodes, tomes...) dans les noms de fichiers et les ecrit dans le commentaire Finder, sans renommer les fichiers.");
-            ui.small("Astuce : fermer cette fenetre la reduit dans la barre de menu (icone en haut a droite) sans arreter la surveillance.");
+            ui.horizontal(|ui| {
+                ui.heading("Spine");
+                ui.add_space(8.0);
+                if ui
+                    .selectable_label(lang == Language::Fr, Language::Fr.flag())
+                    .on_hover_text(Language::Fr.native_name())
+                    .clicked()
+                {
+                    let mut cfg = self.config.lock().unwrap();
+                    cfg.language = Language::Fr;
+                    cfg.save();
+                }
+                if ui
+                    .selectable_label(lang == Language::En, Language::En.flag())
+                    .on_hover_text(Language::En.native_name())
+                    .clicked()
+                {
+                    let mut cfg = self.config.lock().unwrap();
+                    cfg.language = Language::En;
+                    cfg.save();
+                }
+            });
+            ui.label(lang.description());
+            ui.small(lang.hint_hide());
             ui.separator();
 
             // --- Watched folder ---
             ui.horizontal(|ui| {
-                ui.label("Dossier surveille:");
-                let mut folder_str = self.config.lock().unwrap().watched_folder.display().to_string();
+                ui.label(lang.watched_folder_label());
+                let mut folder_str = self
+                    .config
+                    .lock()
+                    .unwrap()
+                    .watched_folder
+                    .display()
+                    .to_string();
                 let response = ui.text_edit_singleline(&mut folder_str);
                 if response.changed() {
                     self.config.lock().unwrap().watched_folder = folder_str.into();
                 }
-                if ui.button("Parcourir...").clicked() {
+                if ui.button(lang.browse()).clicked() {
                     if let Some(path) = rfd::FileDialog::new().pick_folder() {
                         self.config.lock().unwrap().watched_folder = path;
                     }
@@ -231,19 +294,19 @@ impl eframe::App for SpineApp {
 
             ui.horizontal(|ui| {
                 if self.is_watching() {
-                    ui.colored_label(egui::Color32::from_rgb(60, 170, 80), "Surveillance active");
-                    if ui.button("Arreter").clicked() {
+                    ui.colored_label(egui::Color32::from_rgb(60, 170, 80), lang.watching_active());
+                    if ui.button(lang.stop()).clicked() {
                         self.stop_watching();
                     }
                 } else {
-                    ui.colored_label(egui::Color32::GRAY, "Surveillance arretee");
-                    if ui.button("Demarrer").clicked() {
+                    ui.colored_label(egui::Color32::GRAY, lang.watching_stopped());
+                    if ui.button(lang.start()).clicked() {
                         self.start_watching();
                     }
                 }
                 if ui
-                    .button("Rescanner")
-                    .on_hover_text("Relance une analyse complete du dossier, au cas ou un changement aurait ete manque.")
+                    .button(lang.rescan())
+                    .on_hover_text(lang.rescan_hover())
                     .clicked()
                 {
                     self.spawn_scan();
@@ -251,7 +314,10 @@ impl eframe::App for SpineApp {
             });
 
             let mut overwrite = self.config.lock().unwrap().overwrite;
-            if ui.checkbox(&mut overwrite, "Ecraser le commentaire existant (sinon, ajouter le pattern devant)").changed() {
+            if ui
+                .checkbox(&mut overwrite, lang.overwrite_checkbox())
+                .changed()
+            {
                 self.config.lock().unwrap().overwrite = overwrite;
                 self.config.lock().unwrap().save();
             }
@@ -259,34 +325,43 @@ impl eframe::App for SpineApp {
             ui.separator();
 
             // --- Patterns ---
-            ui.label("Patterns detectes (regex):");
+            ui.label(lang.patterns_label());
             let mut to_remove: Option<usize> = None;
             {
                 let mut cfg = self.config.lock().unwrap();
                 let mut changed = false;
-                egui::Grid::new("patterns_grid").num_columns(4).striped(true).show(ui, |ui| {
-                    for (i, pattern) in cfg.patterns.iter_mut().enumerate() {
-                        if ui.checkbox(&mut pattern.enabled, "").changed() {
-                            changed = true;
+                egui::Grid::new("patterns_grid")
+                    .num_columns(4)
+                    .striped(true)
+                    .show(ui, |ui| {
+                        for (i, pattern) in cfg.patterns.iter_mut().enumerate() {
+                            if ui.checkbox(&mut pattern.enabled, "").changed() {
+                                changed = true;
+                            }
+                            if ui
+                                .add_sized(
+                                    [150.0, 20.0],
+                                    egui::TextEdit::singleline(&mut pattern.name),
+                                )
+                                .changed()
+                            {
+                                changed = true;
+                            }
+                            if ui
+                                .add_sized(
+                                    [320.0, 20.0],
+                                    egui::TextEdit::singleline(&mut pattern.regex),
+                                )
+                                .changed()
+                            {
+                                changed = true;
+                            }
+                            if ui.button(lang.delete()).clicked() {
+                                to_remove = Some(i);
+                            }
+                            ui.end_row();
                         }
-                        if ui
-                            .add_sized([150.0, 20.0], egui::TextEdit::singleline(&mut pattern.name))
-                            .changed()
-                        {
-                            changed = true;
-                        }
-                        if ui
-                            .add_sized([320.0, 20.0], egui::TextEdit::singleline(&mut pattern.regex))
-                            .changed()
-                        {
-                            changed = true;
-                        }
-                        if ui.button("Supprimer").clicked() {
-                            to_remove = Some(i);
-                        }
-                        ui.end_row();
-                    }
-                });
+                    });
                 if let Some(i) = to_remove {
                     cfg.patterns.remove(i);
                     changed = true;
@@ -297,9 +372,13 @@ impl eframe::App for SpineApp {
             }
 
             ui.horizontal(|ui| {
-                ui.text_edit_singleline(&mut self.new_pattern_name).on_hover_text("Nom");
-                ui.text_edit_singleline(&mut self.new_pattern_regex).on_hover_text("Regex");
-                if ui.button("Ajouter un pattern").clicked() && !self.new_pattern_regex.trim().is_empty() {
+                ui.text_edit_singleline(&mut self.new_pattern_name)
+                    .on_hover_text(lang.pattern_name_hover());
+                ui.text_edit_singleline(&mut self.new_pattern_regex)
+                    .on_hover_text(lang.pattern_regex_hover());
+                if ui.button(lang.add_pattern()).clicked()
+                    && !self.new_pattern_regex.trim().is_empty()
+                {
                     let name = if self.new_pattern_name.trim().is_empty() {
                         self.new_pattern_regex.clone()
                     } else {
@@ -320,7 +399,7 @@ impl eframe::App for SpineApp {
             ui.separator();
 
             // --- Extensions ---
-            ui.label("Extensions de fichiers surveillees:");
+            ui.label(lang.extensions_label());
             let mut ext_to_remove: Option<usize> = None;
             {
                 let mut cfg = self.config.lock().unwrap();
@@ -341,8 +420,14 @@ impl eframe::App for SpineApp {
             }
             ui.horizontal(|ui| {
                 ui.text_edit_singleline(&mut self.new_extension);
-                if ui.button("Ajouter une extension").clicked() && !self.new_extension.trim().is_empty() {
-                    let ext = self.new_extension.trim().trim_start_matches('.').to_string();
+                if ui.button(lang.add_extension()).clicked()
+                    && !self.new_extension.trim().is_empty()
+                {
+                    let ext = self
+                        .new_extension
+                        .trim()
+                        .trim_start_matches('.')
+                        .to_string();
                     let mut cfg = self.config.lock().unwrap();
                     if !cfg.extensions.iter().any(|e| e.eq_ignore_ascii_case(&ext)) {
                         cfg.extensions.push(ext);
@@ -355,12 +440,15 @@ impl eframe::App for SpineApp {
             ui.separator();
 
             // --- Log ---
-            ui.label("Activite:");
-            egui::ScrollArea::vertical().max_height(220.0).stick_to_bottom(true).show(ui, |ui| {
-                for line in &self.log_lines {
-                    ui.monospace(line);
-                }
-            });
+            ui.label(lang.activity_label());
+            egui::ScrollArea::vertical()
+                .max_height(220.0)
+                .stick_to_bottom(true)
+                .show(ui, |ui| {
+                    for line in &self.log_lines {
+                        ui.monospace(line);
+                    }
+                });
         });
     }
 

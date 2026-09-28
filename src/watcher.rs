@@ -27,13 +27,11 @@ fn send(log_tx: &Sender<LogMsg>, waker: &Waker, msg: LogMsg) {
 
 /// Scans the watched folder once, tagging any already-present files that match.
 pub fn initial_scan(config: &Config, log_tx: &Sender<LogMsg>, waker: &Waker) {
+    let lang = config.language;
     send(
         log_tx,
         waker,
-        LogMsg::Info(format!(
-            "Scan initial de {}...",
-            config.watched_folder.display()
-        )),
+        LogMsg::Info(lang.initial_scan_start(&config.watched_folder.display().to_string())),
     );
     let mut patterns = CompiledPatterns::default();
     patterns.refresh(&config.patterns);
@@ -55,13 +53,7 @@ pub fn initial_scan(config: &Config, log_tx: &Sender<LogMsg>, waker: &Waker) {
             );
         }
     }
-    send(
-        log_tx,
-        waker,
-        LogMsg::Info(format!(
-            "Scan initial termine ({count} fichier(s) tague(s))."
-        )),
-    );
+    send(log_tx, waker, LogMsg::Info(lang.initial_scan_done(count)));
 }
 
 /// Starts watching `config.watched_folder` (and subfolders) for changes.
@@ -106,10 +98,11 @@ pub fn start(
     })?;
 
     watcher.watch(&watch_path, RecursiveMode::Recursive)?;
+    let lang = config.lock().unwrap().language;
     send(
         &log_tx,
         &waker,
-        LogMsg::Info(format!("Surveillance active sur {}", watch_path.display())),
+        LogMsg::Info(lang.watching_active_log(&watch_path.display().to_string())),
     );
 
     Ok(WatcherHandle { _watcher: watcher })
