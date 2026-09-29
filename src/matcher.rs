@@ -29,8 +29,11 @@ impl CompiledPatterns {
     fn detect_tags(&self, filename: &str) -> Vec<String> {
         self.compiled
             .iter()
-            .filter_map(|re| re.find(filename))
-            .map(|m| m.as_str().to_string())
+            .filter_map(|re| re.captures(filename))
+            // Prefer capture group 1 when the pattern defines one (used to tag just
+            // part of a match, e.g. a chapter number without the year that anchors
+            // it); fall back to the whole match otherwise.
+            .map(|c| c.get(1).or_else(|| c.get(0)).unwrap().as_str().to_string())
             .collect()
     }
 }
@@ -125,6 +128,24 @@ mod tests {
         assert_eq!(tags_for("One Piece T01.cbz"), vec!["T01"]);
         assert_eq!(tags_for("One Piece T.01.cbz"), vec!["T.01"]);
         assert_eq!(tags_for("One Piece Vol.05.cbz"), vec!["Vol.05"]);
+    }
+
+    #[test]
+    fn detects_bare_chapter_number_before_year() {
+        let config = Config::default();
+        let mut patterns = CompiledPatterns::default();
+        // Disabled by default; enable it explicitly for this test.
+        let mut chapter_patterns = config.patterns.clone();
+        for p in chapter_patterns.iter_mut() {
+            p.enabled = p.name.starts_with("Chapter");
+        }
+        patterns.refresh(&chapter_patterns);
+        assert_eq!(
+            patterns.detect_tags(
+                "The Beginning After the End 001 (2018) (Digital) (repressedrage) The End of the Tunnel.cbz"
+            ),
+            vec!["001"]
+        );
     }
 
     #[test]

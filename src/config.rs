@@ -36,6 +36,16 @@ impl Default for Config {
                         .to_string(),
                     enabled: true,
                 },
+                PatternEntry {
+                    // Common scanlation/digital-release naming: "Series 001 (2018) (Digital)
+                    // (Group) Title.cbz" — the chapter number has no prefix, so the only
+                    // reliable anchor is the parenthesized year that follows it. Off by
+                    // default since a bare number can also match a sequel number
+                    // ("Alien 3 (1992)") in non-manga filenames.
+                    name: "Chapter (bare number before year)".to_string(),
+                    regex: r"\b(\d{1,4})\b\s*\(\d{4}\)".to_string(),
+                    enabled: false,
+                },
             ],
             extensions: vec![
                 "mkv", "mp4", "avi", "mov", "m4v", "cbz", "cbr", "pdf", "epub",
